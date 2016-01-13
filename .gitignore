@@ -28,7 +28,7 @@
 *.user
 
 # Common data/binary directories
-examplet
+example
 test
 Data
 dump
