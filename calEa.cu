@@ -64,12 +64,12 @@ __global__ void calEa_kernel(const float *Poses, float *Eas, const float2 Sf, co
   float r11, r12, r21, r22, r31, r32;
 
   //float *Pose = &Poses[Idx * 6];
-  tx = Poses[Idx * 6];
-  ty = Poses[Idx * 6+1];
-  tz = Poses[Idx * 6+2];
-  rx = Poses[Idx * 6+3];
-  rz0 = Poses[Idx * 6+4];
-  rz1 = Poses[Idx * 6+5];
+  tx = Poses[Idx*6];
+  ty = Poses[Idx*6 + 1];
+  tz = Poses[Idx*6 + 2];
+  rx = Poses[Idx*6 + 3];
+  rz0 = Poses[Idx*6 + 4];
+  rz1 = Poses[Idx*6 + 5];
   
   rz0Cos = cosf(rz0); rz0Sin = sinf(rz0);
   rz1Cos = cosf(rz1); rz1Sin = sinf(rz1);
@@ -144,7 +144,7 @@ __global__ void calEa_kernel(const float *Poses, float *Eas, const float2 Sf, co
 }
 
 
-void calEa(float*Eas, float* Poses, const double& Sxf, const double& Syf, const int& x_w, const int& y_h, 
+void calEa(float*Eas, float* Poses, const float& Sxf, const float& Syf, const int& x_w, const int& y_h,
            const double& marker_w, const double& marker_h, const int &wI, const int& hI, const int& numPoses) {
   
   // copy poses and Eas to device memory
@@ -154,21 +154,22 @@ void calEa(float*Eas, float* Poses, const double& Sxf, const double& Syf, const 
 	  exit(-1);
   }
   cudaMemcpy(&buffer_d[0], Poses, numPoses * 6 * sizeof(float), cudaMemcpyHostToDevice);
-  //cudaMemset(&buffer_d[numPoses * 6], 0, numPoses * sizeof(float));//
   float *Poses_d = &buffer_d[0];
-  float *Eas_d = &buffer_d[numPoses*6];
-  //cudaMemcpy(Eas, Eas_d, numPoses * sizeof(float), cudaMemcpyDeviceToHost);//
-  //cout << Eas[1021] << "," << Eas[1022] << "," << Eas[1023] << endl;//
+  float *Eas_d = &buffer_d[numPoses * 6];
 
   // CUDA Kernel
   Timer timer;
+  cudaDeviceSynchronize();
   timer.Reset(); timer.Start();
   unsigned int BLOCK_NUM = (numPoses - 1) / BLOCK_SIZE + 1;
-  cout << cudaGetErrorString(cudaGetLastError()) << endl;
   calEa_kernel << < BLOCK_NUM, BLOCK_SIZE >> > (Poses_d, Eas_d, make_float2(Sxf, Syf), make_int2(x_w, y_h), make_float2(marker_w, marker_h), make_int2(wI, hI), numPoses, 444);
+  if (cudaDeviceSynchronize() != cudaSuccess) {
+	  cerr << "error in kernel: " << cudaGetErrorString(cudaGetLastError()) << endl;
+	  exit(-1);
+  }
   timer.Pause();
   cout << "Kernel: " << timer.get_count() << " ns." << endl;
-  cout << cudaGetErrorString(cudaGetLastError()) << endl;
+ 
   // copy and free
   cudaMemcpy(Eas, Eas_d, numPoses * sizeof(float), cudaMemcpyDeviceToHost);
   cudaFree(buffer_d);
@@ -197,42 +198,25 @@ int main() {
 	  Poses[i] = tmp;
   }
   
-  //float *Poses = new float[1024 * 6];
-  //float *Eas = new float[1024];
-  //for (int i = 0; i < 1023; i++) {
-	//Poses[6 * i] = -0.64319;
-	//Poses[6 * i + 1] = -0.38446;
-  //  Poses[6*i+2] = 3;
-  //  Poses[6*i+3] = 0;
-	//Poses[6 * i + 4] = -3.1416;
-	//Poses[6 * i + 5] = -3.1416;
-  //}
-  //Poses[6138] = -0.1488;
-  //Poses[6139] = 0.0855;
-  //Poses[6140] = 4.6846;
-  //Poses[6141] = 0.1890;
-  //Poses[6142] = 0.0398;
-  //Poses[6143] = -0.6661;
-  
   // get random points
   float marker_w = 0.5 * marker.cols / marker.rows;
   float marker_h = 0.5;
 
-  
+  // initial constant memory
   float2 *coor2 = new float2[444];
   float *value = new float[444*3];
   for (int i = 0; i < 444; i++) {
-	float x = rand() % marker.cols;
-	float y = rand() % marker.rows;
+	int x = rand() % marker.cols;
+	int y = rand() % marker.rows;
     Vec3f YCrCb = marker.at<Vec3f>(y, x);
     value[3 * i] = YCrCb[0];
     value[3 * i + 1] = YCrCb[1];
     value[3 * i + 2] = YCrCb[2];
-	coor2[i].x = (2 * x - marker.cols) / marker.cols * marker_w;
-	coor2[i].y = -(2 * y - marker.rows) / marker.rows * marker_h;
+	coor2[i].x = (2 * float(x) - marker.cols) / marker.cols * marker_w;
+	coor2[i].y = -(2 * float(y) - marker.rows) / marker.rows * marker_h;
   }
   
-  
+  // initial texture memory
   Mat imgY(img.rows, img.cols, CV_32F);
   Mat imgCr(img.rows, img.cols, CV_32F);
   Mat imgCb(img.rows, img.cols, CV_32F);
