@@ -10,13 +10,11 @@ using namespace std;
 static unsigned int BLOCK_SIZE = 256;
 
 // Texture
-texture<float, cudaTextureType2D, cudaReadModeElementType> tex_imgY;
-texture<float, cudaTextureType2D, cudaReadModeElementType> tex_imgCr;
-texture<float, cudaTextureType2D, cudaReadModeElementType> tex_imgCb;
+texture<float4, cudaTextureType2D, cudaReadModeElementType> tex_imgYCrCb;
 
 // Constant
 __constant__ float2 const_Mcoor[444];
-__constant__ float const_marker[444 * 3];
+__constant__ float4 const_marker[444];
 
 // Timer
 class Timer {
@@ -62,7 +60,7 @@ __global__ void calEa_kernel(const float *Poses, float *Eas, const float2 Sf, co
   float rz0Cos, rz0Sin, rz1Cos, rz1Sin, rxCos, rxSin;
   float t0, t1, t3, t4, t5, t7, t8, t9, t11; 
   float r11, r12, r21, r22, r31, r32;
-
+  
   //float *Pose = &Poses[Idx * 6];
   tx = Poses[Idx*6];
   ty = Poses[Idx*6 + 1];
@@ -74,72 +72,73 @@ __global__ void calEa_kernel(const float *Poses, float *Eas, const float2 Sf, co
   rz0Cos = cosf(rz0); rz0Sin = sinf(rz0);
   rz1Cos = cosf(rz1); rz1Sin = sinf(rz1);
   rxCos = cosf(rx); rxSin = sinf(rx);
-
-	//  z coordinate is y cross x   so add minus
-	r11 =  rz0Cos * rz1Cos - rz0Sin * rxCos * rz1Sin;
-	r12 = -rz0Cos * rz1Sin - rz0Sin * rxCos * rz1Cos;
-	r21 =  rz0Sin * rz1Cos + rz0Cos * rxCos * rz1Sin;
-	r22 = -rz0Sin * rz1Sin + rz0Cos * rxCos * rz1Cos;
-	r31 =  rxSin * rz1Sin;
-	r32 =  rxSin * rz1Cos;
-	
-	// final transfomration
-	t0 = Sf.x*r11 + P.x*r31;
-	t1 = Sf.x*r12 + P.x*r32;
-	t3 = Sf.x*tx  + P.x*tz;
-	t4 = Sf.y*r21 + (P.y-1)*r31;
-	t5 = Sf.y*r22 + (P.y-1)*r32;
-	t7 = Sf.y*ty  + (P.y-1)*tz;
-	t8 = r31;
-	t9 = r32;
-	t11 = tz;
+  
+  //  z coordinate is y cross x   so add minus
+  r11 =  rz0Cos * rz1Cos - rz0Sin * rxCos * rz1Sin;
+  r12 = -rz0Cos * rz1Sin - rz0Sin * rxCos * rz1Cos;
+  r21 =  rz0Sin * rz1Cos + rz0Cos * rxCos * rz1Sin;
+  r22 = -rz0Sin * rz1Sin + rz0Cos * rxCos * rz1Cos;
+  r31 =  rxSin * rz1Sin;
+  r32 =  rxSin * rz1Cos;
+  
+  // final transfomration
+  t0 = Sf.x*r11 + P.x*r31;
+  t1 = Sf.x*r12 + P.x*r32;
+  t3 = Sf.x*tx  + P.x*tz;
+  t4 = Sf.y*r21 + (P.y-1)*r31;
+  t5 = Sf.y*r22 + (P.y-1)*r32;
+  t7 = Sf.y*ty  + (P.y-1)*tz;
+  t8 = r31;
+  t9 = r32;
+  t11 = tz;
   
   // reject transformations make marker out of boundary
-	float c1x = (t0*(-normDim.x) + t1*(-normDim.y) + t3 ) / 
-               (t8*(-normDim.x) + t9*(-normDim.y) + t11);
-	float c1y = (t4*(-normDim.x) + t5*(-normDim.y) + t7) /
-               (t8*(-normDim.x) + t9*(-normDim.y) + t11 );
-	float c2x = (t0*(+normDim.x) + t1*(-normDim.y) + t3) /
-               (t8*(+normDim.x) + t9*(-normDim.y) + t11);
-	float c2y = (t4*(+normDim.x) + t5*(-normDim.y) + t7) /
-               (t8*(+normDim.x) + t9*(-normDim.y) + t11);
-	float c3x = (t0*(+normDim.x) + t1*(+normDim.y) + t3) /
-               (t8*(+normDim.x) + t9*(+normDim.y) + t11);
-	float c3y = (t4*(+normDim.x) + t5*(+normDim.y) + t7) /
-               (t8*(+normDim.x) + t9*(+normDim.y) + t11);
-	float c4x = (t0*(-normDim.x) + t1*(+normDim.y) + t3) /
-               (t8*(-normDim.x) + t9*(+normDim.y) + t11);
-	float c4y = (t4*(-normDim.x) + t5*(+normDim.y) + t7) /
-               (t8*(-normDim.x) + t9*(+normDim.y) + t11);
-	bool isOutofBound = (c1x < 0) | (c1x >= imgDim.x) | (c1y < 0) | (c1y >= imgDim.y) |
-		(c2x < 0) | (c2x >= imgDim.x) | (c2y < 0) | (c2y >= imgDim.y) |
-		(c3x < 0) | (c3x >= imgDim.x) | (c3y < 0) | (c3y >= imgDim.y) |
-		(c4x < 0) | (c4x >= imgDim.x) | (c4y < 0) | (c4y >= imgDim.y);
-	if (isOutofBound) {
-		Eas[Idx] = INT_MAX;
-		return;
-	}
+  float c1x = (t0*(-normDim.x) + t1*(-normDim.y) + t3 ) / 
+              (t8*(-normDim.x) + t9*(-normDim.y) + t11);
+  float c1y = (t4*(-normDim.x) + t5*(-normDim.y) + t7) /
+              (t8*(-normDim.x) + t9*(-normDim.y) + t11 );
+  float c2x = (t0*(+normDim.x) + t1*(-normDim.y) + t3) /
+              (t8*(+normDim.x) + t9*(-normDim.y) + t11);
+  float c2y = (t4*(+normDim.x) + t5*(-normDim.y) + t7) /
+              (t8*(+normDim.x) + t9*(-normDim.y) + t11);
+  float c3x = (t0*(+normDim.x) + t1*(+normDim.y) + t3) /
+              (t8*(+normDim.x) + t9*(+normDim.y) + t11);
+  float c3y = (t4*(+normDim.x) + t5*(+normDim.y) + t7) /
+              (t8*(+normDim.x) + t9*(+normDim.y) + t11);
+  float c4x = (t0*(-normDim.x) + t1*(+normDim.y) + t3) /
+              (t8*(-normDim.x) + t9*(+normDim.y) + t11);
+  float c4y = (t4*(-normDim.x) + t5*(+normDim.y) + t7) /
+              (t8*(-normDim.x) + t9*(+normDim.y) + t11);
+  bool isOutofBound = (c1x < 0) | (c1x >= imgDim.x) | (c1y < 0) | (c1y >= imgDim.y) |
+    (c2x < 0) | (c2x >= imgDim.x) | (c2y < 0) | (c2y >= imgDim.y) |
+    (c3x < 0) | (c3x >= imgDim.x) | (c3y < 0) | (c3y >= imgDim.y) |
+    (c4x < 0) | (c4x >= imgDim.x) | (c4y < 0) | (c4y >= imgDim.y);
+  if (isOutofBound) {
+    Eas[Idx] = INT_MAX;
+    return;
+  }
   
   // calculate Ea
   float score = 0.0;
-  float z;
-  float Y, Cr, Cb;
+  float invz;
+	float4 YCrCb_tex, YCrCb_const;
   float u, v;
   for (int i = 0; i < numPoints; i++) {
     // calculate coordinate on camera image
-	  z = t8*const_Mcoor[i].x + t9*const_Mcoor[i].y + t11;
-	  u = (t0*const_Mcoor[i].x + t1*const_Mcoor[i].y + t3) / z;
-	  v = (t4*const_Mcoor[i].x + t5*const_Mcoor[i].y + t7) / z;
+		invz = 1 / (t8*const_Mcoor[i].x + t9*const_Mcoor[i].y + t11);
+		u = (t0*const_Mcoor[i].x + t1*const_Mcoor[i].y + t3) * invz;
+		v = (t4*const_Mcoor[i].x + t5*const_Mcoor[i].y + t7) * invz;
     
+		// get value from constmem
+		YCrCb_const = const_marker[i];
+
     // get value from texture
-	  Y = tex2D(tex_imgY, u, v);
-	  Cr = tex2D(tex_imgCr, u, v);
-	  Cb = tex2D(tex_imgCb, u, v);
+		YCrCb_tex = tex2D(tex_imgYCrCb, u, v);
     
     // calculate distant
-    score += (0.5*abs(Y - const_marker[3*i]) + 0.25*abs(Cr - const_marker[3*i+1]) + 0.25*abs(Cb - const_marker[3*i+2]));
+		score += (2*abs(YCrCb_tex.x - YCrCb_const.x) + abs(YCrCb_tex.y - YCrCb_const.y) + abs(YCrCb_tex.z - YCrCb_const.z));
   }
-  score /= numPoints;
+  score /= (numPoints*4);
   Eas[Idx] = score;
 }
 
@@ -197,73 +196,48 @@ int main() {
 	  inFile >> tmp;
 	  Poses[i] = tmp;
   }
-  
+	
   // get random points
   float marker_w = 0.5 * marker.cols / marker.rows;
   float marker_h = 0.5;
 
   // initial constant memory
   float2 *coor2 = new float2[444];
-  float *value = new float[444*3];
+  float4 *value = new float4[444];
   for (int i = 0; i < 444; i++) {
-	int x = rand() % marker.cols;
-	int y = rand() % marker.rows;
+		int x = rand() % marker.cols;
+		int y = rand() % marker.rows;
     Vec3f YCrCb = marker.at<Vec3f>(y, x);
-    value[3 * i] = YCrCb[0];
-    value[3 * i + 1] = YCrCb[1];
-    value[3 * i + 2] = YCrCb[2];
-	coor2[i].x = (2 * float(x) - marker.cols) / marker.cols * marker_w;
-	coor2[i].y = -(2 * float(y) - marker.rows) / marker.rows * marker_h;
+		value[i] = make_float4(YCrCb[0], YCrCb[1], YCrCb[2], 0);
+		coor2[i].x = (2 * float(x) - marker.cols) / marker.cols * marker_w;
+		coor2[i].y = -(2 * float(y) - marker.rows) / marker.rows * marker_h;
   }
   
   // initial texture memory
-  Mat imgY(img.rows, img.cols, CV_32F);
-  Mat imgCr(img.rows, img.cols, CV_32F);
-  Mat imgCb(img.rows, img.cols, CV_32F);
+	float4* imgYCrCb = new float4[img.cols*img.rows];
   for (int j = 0; j < img.rows; j++) {
 	  float* img_j = img.ptr<float>(j);
-	  float* imgY_j = imgY.ptr<float>(j);
-	  float* imgCr_j = imgCr.ptr<float>(j);
-	  float* imgCb_j = imgCb.ptr<float>(j);
 	  for (int i = 0; i < img.cols; i++) {
-		  imgY_j[i] = img_j[3*i];
-		  imgCr_j[i] = img_j[3*i+1];
-		  imgCb_j[i] = img_j[3*i+2];
+			imgYCrCb[j*img.cols + i] = make_float4(img_j[3 * i], img_j[3 * i + 1], img_j[3 * i + 2], 0);
 	  }
   }
   Timer timer;
   timer.Reset(); timer.Start();
   cudaMemcpyToSymbol(const_Mcoor, coor2, sizeof(float2)* 444);
-  cudaMemcpyToSymbol(const_marker, value, sizeof(float)* 444 * 3);
+  cudaMemcpyToSymbol(const_marker, value, sizeof(float4)* 444);
 
   // set texture parameters
-  tex_imgY.addressMode[0] = cudaAddressModeBorder;
-  tex_imgY.addressMode[1] = cudaAddressModeBorder;
-  tex_imgY.filterMode = cudaFilterModeLinear;
-  tex_imgY.normalized = false;
-  tex_imgCr.addressMode[0] = cudaAddressModeBorder;
-  tex_imgCr.addressMode[1] = cudaAddressModeBorder;
-  tex_imgCr.filterMode = cudaFilterModeLinear;
-  tex_imgCr.normalized = false;
-  tex_imgCb.addressMode[0] = cudaAddressModeBorder;
-  tex_imgCb.addressMode[1] = cudaAddressModeBorder;
-  tex_imgCb.filterMode = cudaFilterModeLinear;
-  tex_imgCb.normalized = false;
+	tex_imgYCrCb.addressMode[0] = cudaAddressModeBorder;
+	tex_imgYCrCb.addressMode[1] = cudaAddressModeBorder;
+	tex_imgYCrCb.filterMode = cudaFilterModeLinear;
+	tex_imgYCrCb.normalized = false;
   
   // copy to texture memory
-  cudaChannelFormatDesc desc = cudaCreateChannelDesc<float>();
-  cudaArray *imgYArray, *imgCrArray, *imgCbArray;
-  cudaMallocArray(&imgYArray, &desc, imgY.cols, imgY.rows);
-  cudaMemcpyToArray(imgYArray, 0, 0, imgY.data, sizeof(float)*imgY.cols*imgY.rows, cudaMemcpyHostToDevice);
-  cudaBindTextureToArray(tex_imgY, imgYArray, desc);
-
-  cudaMallocArray(&imgCrArray, &desc, imgCr.cols, imgCr.rows);
-  cudaMemcpyToArray(imgCrArray, 0, 0, imgCr.data, sizeof(float)*imgCr.cols*imgCr.rows, cudaMemcpyHostToDevice);
-  cudaBindTextureToArray(tex_imgCr, imgCrArray, desc);
-
-  cudaMallocArray(&imgCbArray, &desc, imgCb.cols, imgCb.rows);
-  cudaMemcpyToArray(imgCbArray, 0, 0, imgCb.data, sizeof(float)*imgCb.cols*imgCb.rows, cudaMemcpyHostToDevice);
-  cudaBindTextureToArray(tex_imgCb, imgCbArray, desc);
+  cudaChannelFormatDesc desc = cudaCreateChannelDesc<float4>();
+  cudaArray *imgYCrCbArray;
+	cudaMallocArray(&imgYCrCbArray, &desc, img.cols, img.rows);
+	cudaMemcpyToArray(imgYCrCbArray, 0, 0, imgYCrCb, sizeof(float4)*img.cols*img.rows, cudaMemcpyHostToDevice);
+	cudaBindTextureToArray(tex_imgYCrCb, imgYCrCbArray, desc);
   
   calEa(Eas, Poses, 1000, -1000, 400, 300, marker_w, marker_h, img.cols, img.rows, numPoses);
   timer.Pause();
@@ -280,28 +254,9 @@ int main() {
   delete[] coor2;
   delete[] value;
   delete[] Eas;
-  cudaUnbindTexture(tex_imgY);
-  cudaUnbindTexture(tex_imgCr);
-  cudaUnbindTexture(tex_imgCb);
-  cudaFreeArray(imgYArray);
-  cudaFreeArray(imgCrArray);
-  cudaFreeArray(imgCbArray);
+	delete[] imgYCrCb;
+	cudaUnbindTexture(tex_imgYCrCb);
+	cudaFreeArray(imgYCrCbArray);
   cout << cudaGetErrorString(cudaGetLastError()) << endl;
   return 0;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
