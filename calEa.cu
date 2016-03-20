@@ -2,6 +2,7 @@
 #include <iostream>
 #include <fstream>
 #include <chrono>
+#include <thrust/device_vector.h>
 
 using namespace cv;
 using namespace std;
@@ -25,7 +26,7 @@ class Timer {
   Clock Now() {
     return std::chrono::high_resolution_clock::now();
   }
-blic:
+public:
   void Start() {
     running = true;
     prev_start_ = Now();
@@ -47,10 +48,10 @@ blic:
   Timer() { Reset(); }
 };
 
-__global__ void calEa_kernel(const float *Poses, float *Eas, const float2 Sf, const int2 P, const float2 normDim, const int2 imgDim,
+__global__ void calEa_kernel(float4 *Poses4, float2 *Poses2, float *Eas, const float2 Sf, const int2 P, const float2 normDim, const int2 imgDim,
   const int numPoses, const int numPoints) {
   const int tIdx = threadIdx.x;
-  const int Idx = blockIdx.x * blockDim.x + tIdx;
+  const int Idx = blockIdx.x * 256 + tIdx;
 
   if (Idx >= numPoses)
     return;
@@ -61,20 +62,13 @@ __global__ void calEa_kernel(const float *Poses, float *Eas, const float2 Sf, co
   float t0, t1, t3, t4, t5, t7, t8, t9, t11;
   float r11, r12, r21, r22, r31, r32;
 
-  //float *Pose = &Poses[Idx * 6];
-  tx = Poses[Idx];
-  ty = Poses[numPoses + Idx];
-  tz = Poses[numPoses * 2 + Idx];
-  rx = Poses[numPoses * 3 + Idx];
-  rz0 = Poses[numPoses * 4 + Idx];
-  rz1 = Poses[numPoses * 5 + Idx];
-
-  //tx = Poses[Idx*6];
-  //ty = Poses[Idx*6 + 1];
-  //tz = Poses[Idx*6 + 2];
-  //rx = Poses[Idx*6 + 3];
-  //rz0 = Poses[Idx*6 + 4];
-  //rz1 = Poses[Idx*6 + 5];
+  // get pose parameter
+  tx = Poses4[Idx].x;
+  ty = Poses4[Idx].y;
+  tz = Poses4[Idx].z;
+  rx = Poses4[Idx].w;
+  rz0 = Poses2[Idx].x;
+  rz1 = Poses2[Idx].y;
 
   rz0Cos = cosf(rz0); rz0Sin = sinf(rz0);
   rz1Cos = cosf(rz1); rz1Sin = sinf(rz1);
@@ -127,6 +121,7 @@ __global__ void calEa_kernel(const float *Poses, float *Eas, const float2 Sf, co
   float4 YCrCb_tex, YCrCb_const;
   float u, v;
   for (int i = 0; i < numPoints; i++) {
+    
     // calculate coordinate on camera image
     invz = 1 / (t8*const_Mcoor[i].x + t9*const_Mcoor[i].y + t11);
     u = (t0*const_Mcoor[i].x + t1*const_Mcoor[i].y + t3) * invz;
@@ -145,25 +140,20 @@ __global__ void calEa_kernel(const float *Poses, float *Eas, const float2 Sf, co
 }
 
 
-void calEa(float*Eas, float* Poses, const float& Sxf, const float& Syf, const int& x_w, const int& y_h,
+void calEa(float* Eas, float4* Pose4, float2* Pose2, const float& Sxf, const float& Syf, const int& x_w, const int& y_h,
   const double& marker_w, const double& marker_h, const int &wI, const int& hI, const int& numPoses) {
 
   // copy poses and Eas to device memory
-  float *buffer_d;
-  if (cudaMalloc(&buffer_d, numPoses * 7 * sizeof(float)) != cudaSuccess) {
-    cerr << "out of global memory!\n";
-    exit(-1);
-  }
-  cudaMemcpy(&buffer_d[0], Poses, numPoses * 6 * sizeof(float), cudaMemcpyHostToDevice);
-  float *Poses_d = &buffer_d[0];
-  float *Eas_d = &buffer_d[numPoses * 6];
+  thrust::device_vector<float4> Poses4(Pose4, Pose4 + numPoses);
+  thrust::device_vector<float2> Poses2(Pose2, Pose2 + numPoses);
+  thrust::device_vector<float> Eas_d(Eas, Eas + numPoses);
 
   // CUDA Kernel
   Timer timer;
-  cudaDeviceSynchronize();
   timer.Reset(); timer.Start();
-  unsigned int BLOCK_NUM = (numPoses - 1) / BLOCK_SIZE + 1;
-  calEa_kernel << < BLOCK_NUM, BLOCK_SIZE >> > (Poses_d, Eas_d, make_float2(Sxf, Syf), make_int2(x_w, y_h), make_float2(marker_w, marker_h), make_int2(wI, hI), numPoses, 444);
+  unsigned int BLOCK_NUM = (numPoses - 1) / 256 + 1;
+  calEa_kernel << < BLOCK_NUM, 256 >> > (thrust::raw_pointer_cast(Poses4.data()), thrust::raw_pointer_cast(Poses2.data()), thrust::raw_pointer_cast(Eas_d.data()), 
+    make_float2(Sxf, Syf), make_int2(x_w, y_h), make_float2(marker_w, marker_h), make_int2(wI, hI), numPoses, 444);
   if (cudaDeviceSynchronize() != cudaSuccess) {
     cerr << "error in kernel: " << cudaGetErrorString(cudaGetLastError()) << endl;
     exit(-1);
@@ -172,8 +162,7 @@ void calEa(float*Eas, float* Poses, const float& Sxf, const float& Syf, const in
   cout << "Kernel: " << timer.get_count() << " ns." << endl;
 
   // copy and free
-  cudaMemcpy(Eas, Eas_d, numPoses * sizeof(float), cudaMemcpyDeviceToHost);
-  cudaFree(buffer_d);
+  cudaMemcpy(Eas, thrust::raw_pointer_cast(Eas_d.data()), numPoses * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
 int main() {
@@ -187,22 +176,24 @@ int main() {
   cvtColor(marker, marker, CV_BGR2YCrCb);
 
   // read poses
-  const int numPoses = 5166368;
-  float *Posestmp = new float[numPoses * 6];
-  float *Poses = new float[numPoses * 6];
+  const int numPoses = 5166396;
+  float4 *Pose4 = new float4[numPoses];
+  float2 *Pose2 = new float2[numPoses];
   float *Eas = new float[numPoses];
   ifstream inFile("poses.txt");
   if (!inFile)
     return 0;
-  for (int i = 0; i < numPoses * 6; i++) {
-    float tmp;
-    inFile >> tmp;
-    Posestmp[i] = tmp;
+  for (int i = 0; i < numPoses; i++) {
+    inFile >> Pose4[i].x;
+    inFile >> Pose4[i].y;
+    inFile >> Pose4[i].z;
+    inFile >> Pose4[i].w;
+    inFile >> Pose2[i].x;
+    inFile >> Pose2[i].y;
   }
-  for (int i = 0; i < 6; i++)
-  for (int j = 0; j < numPoses; j++)
-    Poses[i*numPoses + j] = Posestmp[j * 6 + i];
-
+  inFile.close();
+  cout << "read poses complete!" << endl;
+  
   // get random points
   float marker_w = 0.5 * marker.cols / marker.rows;
   float marker_h = 0.5;
@@ -245,7 +236,7 @@ int main() {
   cudaMemcpyToArray(imgYCrCbArray, 0, 0, imgYCrCb, sizeof(float4)*img.cols*img.rows, cudaMemcpyHostToDevice);
   cudaBindTextureToArray(tex_imgYCrCb, imgYCrCbArray, desc);
 
-  calEa(Eas, Poses, 1000, -1000, 400, 300, marker_w, marker_h, img.cols, img.rows, numPoses);
+  calEa(Eas, Pose4, Pose2, 1000, -1000, 400, 300, marker_w, marker_h, img.cols, img.rows, numPoses);
   timer.Pause();
   cout << "Overall: " << timer.get_count() << " ns." << endl;
   ofstream outFile("EasCuda.txt");
@@ -254,10 +245,10 @@ int main() {
   for (int i = 0; i < numPoses; i++) {
     outFile << Eas[i] << endl;
   }
-  //inFile.close();
   outFile.close();
-  delete[] Poses;
-  delete[] Posestmp;
+  
+  delete[] Pose4;
+  delete[] Pose2;
   delete[] coor2;
   delete[] value;
   delete[] Eas;
