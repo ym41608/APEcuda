@@ -15,39 +15,39 @@ static const int BLOCK_SIZE = 256;
 
 // Timer
 class Timer {
-	typedef std::chrono::time_point<std::chrono::high_resolution_clock> Clock;
-	long long count;
-	bool running;
-	Clock prev_start_;
-	Clock Now() {
-		return std::chrono::high_resolution_clock::now();
-	}
+  typedef std::chrono::time_point<std::chrono::high_resolution_clock> Clock;
+  long long count;
+  bool running;
+  Clock prev_start_;
+  Clock Now() {
+    return std::chrono::high_resolution_clock::now();
+  }
 public:
-	void Start() {
-		running = true;
-		prev_start_ = Now();
-	}
-	void Pause() {
-		if (running) {
-			running = false;
-			auto diff = Now() - prev_start_;
-			count += std::chrono::duration_cast<std::chrono::nanoseconds>(diff).count();
-		}
-	}
-	void Reset() {
-		running = false;
-		count = 0;
-	}
-	long long get_count() {
-		return count;
-	}
-	Timer() { Reset(); }
+  void Start() {
+    running = true;
+    prev_start_ = Now();
+  }
+  void Pause() {
+    if (running) {
+      running = false;
+      auto diff = Now() - prev_start_;
+      count += std::chrono::duration_cast<std::chrono::nanoseconds>(diff).count();
+    }
+  }
+  void Reset() {
+    running = false;
+    count = 0;
+  }
+  long long get_count() {
+    return count;
+  }
+  Timer() { Reset(); }
 };
 
 struct isLessTest { 
     __host__ __device__ 
     bool operator()(const thrust::tuple<float4, float2, bool>& a ) { 
-        return (thrust::get<2>(a) == false); 
+      return (thrust::get<2>(a) == false); 
     };
 };
 
@@ -55,10 +55,10 @@ __global__
 void isLess_kernel(bool* isEasLess, float* Eas, const float threshold, const int numPoses) {
   const int tIdx = threadIdx.x;
   const int Idx = blockIdx.x * 256 + tIdx;
-
+  
   if (Idx >= numPoses)
     return;
-
+  
   isEasLess[Idx] = (Eas[Idx] < threshold)? true : false;
 }
 
