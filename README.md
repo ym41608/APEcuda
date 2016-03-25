@@ -14,3 +14,6 @@ ver4. float4 & float2 pose(transpose pose too), 0.8 s
 
 ## getPoses (matlab, 0.4s)
 ver1. initial commit, 0.04s
+
+## expandPoses (matlab, 0.8s)
+ver1. initial commit, 0.02s
