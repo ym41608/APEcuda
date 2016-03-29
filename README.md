@@ -17,3 +17,6 @@ ver1. initial commit, 0.04s
 
 ## expandPoses (matlab, 0.8s)
 ver1. initial commit, 0.02s
+
+## ranPixels
+ver1. initial commit (using device_vector)
