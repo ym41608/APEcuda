@@ -20,3 +20,9 @@ ver1. initial commit, 0.02s
 
 ## ranPixels
 ver1. initial commit (using device_vector)
+
+## preCal
+ver1. initial commit (wx wy 8)
+
+## C2Festimate (matlab, 40 s)
+ver1. initial commit (1.5 s)
