@@ -24,6 +24,7 @@ ver1. initial commit (using device_vector)
 ## preCal
 ver1. initial commit (wx wy 8)
 ver2. for opencv2.4
+ver3. preallocate gpumat(dont improve)
 
 ## creatSet
 ver1. initial commit (tz rx nested)
