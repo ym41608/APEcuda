@@ -23,6 +23,10 @@ ver1. initial commit (using device_vector)
 
 ## preCal
 ver1. initial commit (wx wy 8)
+ver2. for opencv2.4
+
+## creatSet
+ver1. initial commit (tz rx nested)
 
 ## C2Festimate (matlab, 40 s)
 ver1. initial commit (1.5 s)
