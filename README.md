@@ -31,3 +31,8 @@ ver1. initial commit (tz rx nested)
 
 ## C2Festimate (matlab, 40 s)
 ver1. initial commit (1.5 s)
+
+## APE (matlab, np 5r 60 s, p 5r 60 s)
+ver1. initial commit (np 6r 2.7 s, p 7r 5.1 s)
+      preCal 0.4 s
+      using float4 tmp[SAMPLE_NUM] for p

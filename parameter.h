@@ -1,7 +1,17 @@
 #ifndef PARAMETER_H
 #define PARAMETER_H
 
+static const int BLOCK_SIZE = 256;
+static const int SAMPLE_NUM = 444;
 
+// constant
+__constant__ float2 const_Mcoor[SAMPLE_NUM];
+__constant__ float4 const_marker[SAMPLE_NUM];
+
+// Texture
+texture<float4, cudaTextureType2D, cudaReadModeElementType> tex_imgYCrCb;
+
+// class parameter
 class parameter {
   public:
     void shrinkNet(const float& factor) {
@@ -16,8 +26,6 @@ class parameter {
     
     // about pose net
     float delta;
-    float2 Btx;
-    float2 Bty;
     float2 Btz;
     float2 Brx;
     float2 Brz;

@@ -42,7 +42,7 @@ struct isValidTest {
 __global__
 void expand_kernel(float4* Poses4, float2* Poses2, const int numPoses, const int newSize) {
   const int tIdx = threadIdx.x;
-  const int Idx = blockIdx.x * 256 + tIdx;
+  const int Idx = blockIdx.x * BLOCK_SIZE + tIdx;
   if (Idx >= numPoses)
     return;
   
@@ -56,7 +56,7 @@ __global__
 void add_kernel(float4* Poses4, float2* Poses2, int4* rand4, int2* rand2, bool* isValid, 
                 const float4 s4, const float2 s2, const float2 btz, const float2 brx, const float2 marker, const int numPoses, const int expandSize) {
   const int tIdx = threadIdx.x;
-  const int Idx = blockIdx.x * 256 + tIdx;
+  const int Idx = blockIdx.x * BLOCK_SIZE + tIdx;
   if (Idx >= expandSize)
     return;
   float isPlus;
@@ -116,15 +116,15 @@ void expandPoses(thrust::device_vector<float4>* Poses4, thrust::device_vector<fl
   randVector(&rand4, &rand2, expandSize);
   
   // expand origin set
-  const int BLOCK_NUM0 = ((*numPoses) - 1) / 256 + 1;
+  const int BLOCK_NUM0 = ((*numPoses) - 1) / BLOCK_SIZE + 1;
   Poses4->resize(newSize);
   Poses2->resize(newSize);
-  expand_kernel << < BLOCK_NUM0, 256 >> > (thrust::raw_pointer_cast(Poses4->data()), thrust::raw_pointer_cast(Poses2->data()), *numPoses, newSize);
+  expand_kernel << < BLOCK_NUM0, BLOCK_SIZE >> > (thrust::raw_pointer_cast(Poses4->data()), thrust::raw_pointer_cast(Poses2->data()), *numPoses, newSize);
 
   // add finer delta
-  const int BLOCK_NUM1 = (expandSize - 1) / 256 + 1;
+  const int BLOCK_NUM1 = (expandSize - 1) / BLOCK_SIZE + 1;
   thrust::device_vector<bool> isValid(newSize, true);
-  add_kernel <<< BLOCK_NUM1, 256 >>> (thrust::raw_pointer_cast(Poses4->data()), thrust::raw_pointer_cast(Poses2->data()), 
+  add_kernel <<< BLOCK_NUM1, BLOCK_SIZE >>> (thrust::raw_pointer_cast(Poses4->data()), thrust::raw_pointer_cast(Poses2->data()), 
                                       thrust::raw_pointer_cast(rand4.data()), thrust::raw_pointer_cast(rand2.data()), 
                                       thrust::raw_pointer_cast(isValid.data()), para->s4, para->s2, 
                                       para->Btz, para->Brx, para->markerDim, *numPoses, expandSize);

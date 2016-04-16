@@ -18,7 +18,7 @@ struct isLessTest {
 __global__
 void isLess_kernel(bool* isEasLess, float* Eas, const float threshold, const int numPoses) {
   const int tIdx = threadIdx.x;
-  const int Idx = blockIdx.x * 256 + tIdx;
+  const int Idx = blockIdx.x * BLOCK_SIZE + tIdx;
   
   if (Idx >= numPoses)
     return;
@@ -42,9 +42,9 @@ bool getPoses(thrust::device_vector<float4>* Poses4, thrust::device_vector<float
   bool first = true;
   int count = INT_MAX;
   thrust::device_vector<bool> isEasLess(*numPoses, false);
-  const int BLOCK_NUM = (*numPoses - 1) / 256 + 1;
+  const int BLOCK_NUM = (*numPoses - 1) / BLOCK_SIZE + 1;
   while (true) {
-    isLess_kernel <<< BLOCK_NUM, 256 >>> (thrust::raw_pointer_cast(isEasLess.data()), thrust::raw_pointer_cast(Eas->data()), minEa, Eas->size());
+    isLess_kernel <<< BLOCK_NUM, BLOCK_SIZE >>> (thrust::raw_pointer_cast(isEasLess.data()), thrust::raw_pointer_cast(Eas->data()), minEa, Eas->size());
     count = thrust::count(thrust::device, isEasLess.begin(), isEasLess.end(), true);
     if (first)
       tooHighPercentage = (count / *numPoses > 0.1);

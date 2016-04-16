@@ -2,17 +2,12 @@
 #define RANPIXELS_H
 
 #include <opencv2/opencv.hpp>
-#include <opencv2/core/cuda.hpp>
+#include <opencv2/gpu/gpu.hpp>
 #include <thrust/device_vector.h>
 #include <thrust/transform.h>
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/random.h>
-
-// constant
-const static int SAMPLE_NUM = 444;
-__constant__ float2 const_Mcoor[SAMPLE_NUM];
-__constant__ float4 const_marker[SAMPLE_NUM];
-
+#include "parameter.h"
 
 struct intwhprg {
   int w, h;
@@ -32,9 +27,9 @@ struct intwhprg {
   };
 };
 
-__global__ void assign_kernel(float2 *mCoor, float4 *mValue, int2 *rand_coor, const cv::cuda::PtrStepSz<float3> marker_dptr, const int2 mDim, const float2 markerDim) {
+__global__ void assign_kernel(float2 *mCoor, float4 *mValue, int2 *rand_coor, const cv::gpu::PtrStepSz<float3> marker_dptr, const int2 mDim, const float2 markerDim) {
   const int tIdx = threadIdx.x;
-  const int Idx = blockIdx.x * 128 + tIdx;
+  const int Idx = blockIdx.x * BLOCK_SIZE + tIdx;
   if (Idx >= SAMPLE_NUM)
     return;
   
@@ -50,7 +45,7 @@ __global__ void assign_kernel(float2 *mCoor, float4 *mValue, int2 *rand_coor, co
   mCoor[Idx] = coor;
 };
 
-void randSample(thrust::device_vector<float2>* mCoor, thrust::device_vector<float4>* mValue, const cv::cuda::GpuMat &marker_d, const int2& mDim, const float2 markerDim) {
+void randSample(thrust::device_vector<float2>* mCoor, thrust::device_vector<float4>* mValue, const cv::gpu::GpuMat &marker_d, const int2& mDim, const float2 markerDim) {
 
   // rand pixel
   thrust::device_vector<int2> rand_coor(SAMPLE_NUM, make_int2(0, 0));
@@ -58,8 +53,8 @@ void randSample(thrust::device_vector<float2>* mCoor, thrust::device_vector<floa
   thrust::transform(i0, i0 + SAMPLE_NUM, rand_coor.begin(), intwhprg(mDim.x, mDim.y));
 
   // get pixel value and position
-  const int BLOCK_NUM = (SAMPLE_NUM - 1) / 128 + 1;
-  assign_kernel << < BLOCK_NUM, 128 >> > (thrust::raw_pointer_cast(mCoor->data()), thrust::raw_pointer_cast(mValue->data()), thrust::raw_pointer_cast(rand_coor.data()), marker_d, mDim, markerDim);
+  const int BLOCK_NUM = (SAMPLE_NUM - 1) / BLOCK_SIZE + 1;
+  assign_kernel << < BLOCK_NUM, BLOCK_SIZE >> > (thrust::raw_pointer_cast(mCoor->data()), thrust::raw_pointer_cast(mValue->data()), thrust::raw_pointer_cast(rand_coor.data()), marker_d, mDim, markerDim);
 
   // bind to const mem
   cudaMemcpyToSymbol(const_Mcoor, thrust::raw_pointer_cast(mCoor->data()), sizeof(float2)* SAMPLE_NUM, 0, cudaMemcpyDeviceToDevice);
